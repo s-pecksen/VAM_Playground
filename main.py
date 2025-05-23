@@ -67,36 +67,70 @@ def gen_image(prompt, width=256, height=256):
 ## Function 3: This Allows Us to Create a Chatbot
 # -------------------------------------------------
 def bot_response_function(user_message, chat_history):
-    # 1. YOUR CODE HERE - Add your external knowledge here
     external_knowledge = """
-    What Happened to You? by Oprah Winfrey and Bruce D. Perry, and The Body Keeps the Score by Bessel van der Kolk
+    Drug Use for Grownups by Dr. Carl Hart, Chasing the Scream by Johann Hari, and This is Your Mind on Plants by Michael Pollan
     """
 
-    # 2. YOUR CODE HERE -  Give the LLM a prompt to respond to the user
     chatbot_prompt = f"""
-    You are a veteran trauma-informed therapist who gives advice to new patients
+    You are a woke pharmacist who gives advice to patients on lifestyle choices, drugs and their side effects
 
     respond to this {user_message} following these instructions:
 
     ## Instructions:
     * be very concise
     * always start with Thank you for sharing
-    * then ask the user if they feel the advice you shared is a reasonable step to take
+    * then encourage the user to have fun and make smart choices
     * Ground all your answers based on this book {external_knowledge} and make sure you cite the exact phrase from that book
     """
+    print(f"DEBUG: User message: '{user_message}'")
 
-    response = client.chat.completions.create(
-        model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-        messages=[{"role": "user", "content": chatbot_prompt}],
-    )
-    response = response.choices[0].message.content
+    raw_llm_response = "Error: LLM call failed or returned unexpected data." # Default for error cases
+    actual_response_for_user = "[LLM returned an empty or invalid response after processing]" # Default for post-processing
 
-    # 3. YOUR CODE HERE - Generate image based on the response
-    image_prompt = f"A {response} in a pop art style"
+    try:
+        api_response = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+            messages=[{"role": "user", "content": chatbot_prompt}],
+        )
+        raw_llm_response_content = api_response.choices[0].message.content
+        if not isinstance(raw_llm_response_content, str):
+            raw_llm_response_content = str(raw_llm_response_content)
+            
+        print(f"DEBUG: Raw LLM response (len={len(raw_llm_response_content)}): '{raw_llm_response_content}' (repr: {repr(raw_llm_response_content)})")
+
+        # Attempt to extract content after </think>
+        think_tag_end = "</think>"
+        if think_tag_end in raw_llm_response_content:
+            parts = raw_llm_response_content.split(think_tag_end, 1)
+            if len(parts) > 1:
+                actual_response_for_user = parts[1].strip()
+            else: # Should not happen if tag is found, but as a safeguard
+                actual_response_for_user = raw_llm_response_content.strip() 
+        else:
+            # If no <think> block, assume the whole response is for the user
+            actual_response_for_user = raw_llm_response_content.strip()
+
+        # If after all processing, the text is empty, use a placeholder
+        if not actual_response_for_user:
+            actual_response_for_user = "[LLM response was empty after stripping <think> block]"
+        
+        print(f"DEBUG: Extracted for user (len={len(actual_response_for_user)}): '{actual_response_for_user}'")
+
+    except Exception as e:
+        print(f"DEBUG: Error during LLM call or processing: {e}")
+        actual_response_for_user = "Sorry, I encountered an error generating a response." # Keep this as a fallback
+
+    # Assign to response_text for image prompt and history
+    response_text = actual_response_for_user
+
+    # Generate image based on the (cleaned) response
+    image_prompt = f"A {response_text} in a pop art style"
+    print(f"DEBUG: Image prompt: '{image_prompt}'")
     image = gen_image(image_prompt)
 
-    # Append the response and image to the chat history
-    chat_history.append((user_message, response))
+    chat_history.append((user_message, response_text))
+    print(f"DEBUG: Updated chat history: {chat_history}")
+
     return "", chat_history, image
 
 
